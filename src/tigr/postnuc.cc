@@ -43,6 +43,8 @@
 //         mostly the alignment extension performance (sw_align.h)
 //#define _DEBUG_ASSERT       // self testing assert functions
 
+#include <pthread.h>
+#include <iostream>
 #include "tigrinc.hh"
 #include "sw_align.hh"
 #include <vector>
@@ -418,6 +420,8 @@ int main
 		}
 	      else
 		{
+      //rc Add threads since each call to process synteny should be independent of eachother
+      
 		  //-- New B sequence header, process all the old synteny's
 		  processSyntenys (Syntenys, Af, As,
 				   QryFile, ClusterFile, DeltaFile);
@@ -470,7 +474,7 @@ int main
 	  PrevLine = MATCH_LINE;
 	}
     }
-
+  //rc Bring all the threads back together before cleaning up
   //-- Process the left-over syntenys
   if ( !Syntenys.empty( ) && !CurrSp->clusters.empty( ) )
     if ( CurrSp->clusters.rbegin( )->matches.empty( ) )
@@ -1344,7 +1348,19 @@ void parseDelta
 }
 
 
-
+//void processSynteny(vector<Synteny> & Syntenys, FastaRecord * Af, 
+//    long int As, FILE * QryFile, FILE * ClusterFile, FILE * DeltaFile)
+//{
+//  FastaRecord Bf;
+//  Bf.Id = (char *) Safe_malloc (sizeof(char) * (MAX_LINW + 1));
+//
+//  long int InitSize = INIT_SIZE;
+//  
+//  if( CurrSp->clusters.empty() {
+//    continue;
+//  }
+//
+//}
 
 void processSyntenys
      (vector<Synteny> & Syntenys, FastaRecord * Af, long int As,
@@ -1369,7 +1385,7 @@ void processSyntenys
 
   //-- For all the contained syntenys
   for ( CurrSp = Syntenys.begin( ); CurrSp < Syntenys.end( ); CurrSp ++ )
-    {
+    { 
       //-- If no clusters, ignore
       if ( CurrSp->clusters.empty( ) )
 	continue;
