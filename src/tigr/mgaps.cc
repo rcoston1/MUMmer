@@ -41,14 +41,20 @@ long int  Max  (long int A, long int B)
        return  A;
   }
 
-
 static int  Check_Labels = FALSE;
+  //rc set via the -C option 
 static int  Fixed_Separation = DEFAULT_FIXED_SEPARATION;
+  //rc set via the -d option
 static long int  Max_Separation = DEFAULT_MAX_SEPARATION;
+  //rc set via the -s option
 static long int  Min_Output_Score = DEFAULT_MIN_OUTPUT_SCORE;
+  //rc set via the -l option
 static double  Separation_Factor = DEFAULT_SEPARATION_FACTOR;
+  //rc set via the -f option
 static int  * UF = NULL;
+  //rc union-find variable
 static int  Use_Extents = FALSE;
+  //rc set via the -e option
   // If TRUE use end minus start as length of cluster instead of
   // sum of component lengths
 
@@ -89,12 +95,15 @@ int  main
 
    Parse_Command_Line  (argc, argv);
 
+   //rc create match (A) and union-find (UF) arrays
    Size = 500;
    A = (Match_t *) Safe_malloc (Size * sizeof (Match_t));
    UF = (int *) Safe_malloc (Size * sizeof (int));
 
    while  (fgets (line, MAX_LINE, stdin) != NULL)
      {
+      //rc If we are now at a header line, process all matches
+      //   unless this is the first header line we reached
       if  (line [0] == '>')
           {
            if  (first)
@@ -102,12 +111,15 @@ int  main
              else
                Process_Matches (A, N, save);
            N = 0;
+           //rc Copy the content of line to save
            strcpy (save, line);
            if  (Check_Labels && (++ header_line_ct % 2 == 0))
                assert (strstr (line, "Reverse") != NULL);
           }
       else if  (sscanf (line, "%ld %ld %ld", & S1, & S2, & Len) == 3)
           {
+           //rc if there is no more room in the match and UF arrays double the
+           //  size of the arrays and reallocate them
            if  (N >= Size - 1)
                {
                 Size *= 2;
@@ -115,6 +127,7 @@ int  main
                 UF = (int *) Safe_realloc (UF, Size * sizeof (int));
                }
            N ++;
+           //rc Set the variables in the match struct from the data read in
            A [N] . Start1 = S1;
            A [N] . Start2 = S2;
            A [N] . Len = Len;
@@ -236,7 +249,7 @@ static void  Filter_Matches
 
   {
    int  i, j;
-
+   //rc Set all matches to good
    for  (i = 0;  i < N;  i ++)
      A [i] . Good = TRUE;
 
@@ -255,12 +268,14 @@ static void  Filter_Matches
          int  olap;
          int  j_diag;
 
+         //rc Fail if the matches are not in sorted order 
          assert (A [i] . Start2 <= A [j] . Start2);
 
          if  (! A [j] . Good)
              continue;
 
          j_diag = A [j] . Start2 - A [j] . Start1;
+         //rc Combines overlapping matches on the same diagional
          if  (i_diag == j_diag)
              {
               int  j_extent;
@@ -271,26 +286,33 @@ static void  Filter_Matches
                    A [i] . Len = j_extent;
                    i_end = A [i] . Start2 + j_extent;
                   }
+              //rc Ignore this match in all future iterations since it has been combined
               A [j] . Good = FALSE;
              }
+         //rc Both matches start in the same place in sequence 1
          else if  (A [i] . Start1 == A [j] . Start1)
              {
               olap = A [i] . Start2 + A [i] . Len - A [j] . Start2;
+              //rc Match j is longer
               if  (A [i] . Len < A [j] . Len)
                   {
+                   //rc The overlap is greater than half the length of match i
                    if  (olap >=  A [i] . Len / 2)
                        {
                         A [i] . Good = FALSE;
                         break;
                        }
                   }
+              //rc Match i is longer
               else if  (A [j] . Len < A [i] . Len)
                   {
+                   //rc The overlap is greater than half the length of match j
                    if  (olap >= A [j] . Len / 2)
                        {
                         A [j] . Good = FALSE;
                        }
                   }
+                //rc A[i].Len == A[j].Len
                 else
                   {
                    if  (olap >= A [i] . Len / 2)
@@ -304,24 +326,30 @@ static void  Filter_Matches
                        }
                   }
              }
+         //rc Both matches start in the same place in sequence 2
          else if  (A [i] . Start2 == A [j] . Start2)
              {
               olap = A [i] . Start1 + A [i] . Len - A [j] . Start1;
+              //rc Match j in longer
               if  (A [i] . Len < A [j] . Len)
                   {
+                   //rc The overlap is greater than half the length of match i
                    if  (olap >=  A [i] . Len / 2)
                        {
                         A [i] . Good = FALSE;
                         break;
                        }
                   }
+              //rc Match i is longer
               else if  (A [j] . Len < A [i] . Len)
                   {
+                   //rc The overlap is greater than half the length of match j
                    if  (olap >= A [j] . Len / 2)
                        {
                         A [j] . Good = FALSE;
                        }
                   }
+                //rc A[i].Len == A[j].Len
                 else
                   {
                    if  (olap >= A [i] . Len / 2)
@@ -337,7 +365,7 @@ static void  Filter_Matches
              }
         }
      }
-
+   //rc Combine matches 
    for  (i = j = 0;  i < N;  i ++)
      if  (A [i] . Good)
          {
@@ -345,8 +373,10 @@ static void  Filter_Matches
               A [j] = A [i];
           j ++;
          }
+   //rc Set N to the number of remaining matches
    N = j;
-
+  
+   //rc Set all matches back to not good
    for  (i = 0;  i < N;  i ++)
      A [i] . Good = FALSE;
 
@@ -396,26 +426,32 @@ static void  Parse_Command_Line
      switch  (ch)
        {
         case  'C' :
+          //rc Check that the input header lables alternately have the "Reverse" keyword
           Check_Labels = TRUE;
           break;
 
         case  'd' :
+          //rc Maximum fixed diagonal difference
           Fixed_Separation = strtol (optarg, & p, 10);
           break;
 
         case  'e' :
+          //rc Use extent of cluster rather than the sum of the match lengths to determine cluster length
           Use_Extents = TRUE;
           break;
 
         case  'f' :
+          //rc Maximum fraction of seperation for diagonal difference
           Separation_Factor = strtod (optarg, & p);
           break;
 
         case  'l' :
+          //rc Minimum cluster length
           Min_Output_Score = strtol (optarg, & p, 10);
           break;
 
         case  's' :
+          //rc Maximum seperation between adjacent matches in a cluster
           Max_Separation = strtol (optarg, & p, 10);
           break;
 
@@ -508,8 +544,8 @@ static int  Process_Cluster
            fputs (label, stdout);
            prev = -1;
            for  (i = 0;  i < N;  i ++)
+           {
              if  (A [i] . Good)
-                 {
                   if  (prev == -1)
                       printf ("%8ld %8ld %6ld %7s %6s %6s\n",
                           A [i] . Start1, A [i] . Start2, A [i] . Len,
@@ -533,7 +569,7 @@ static int  Process_Cluster
            label = "#\n";
           }
 
-      for  (i = k = 0;  i < N;  i ++)
+      for  (i = k = 0;  i < N;  i ++) 
         if  (! A [i] . Good)
             {
              if  (i != k)
@@ -575,7 +611,8 @@ static void  Process_Matches
      UF [i] = -1;
 
    qsort (A + 1, N, sizeof (Match_t), By_Start2);
-
+   //rc Remove any matches that are internal to a repeat, combine overlapping
+   //    matches on the same diagonal. 
    Filter_Matches (A + 1, N);
 
    for  (i = 1;  i < N;  i ++)
