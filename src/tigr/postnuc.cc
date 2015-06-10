@@ -49,6 +49,8 @@
 #include "sw_align.hh"
 #include <vector>
 #include <algorithm>
+#include <time.h>
+
 using namespace std;
 
 
@@ -62,6 +64,17 @@ bool DO_EXTEND = true;
 bool TO_SEQEND = false;
 bool DO_SHADOWS = false;
 
+#ifdef calculate_stats
+  int syntenyCreated = 0;
+  int syntenyUpdated = 0;
+  int addedToCluster = 0;
+  int numSyntenyProcess = 0;
+  long syntenyProcessTime = 0;
+  long extentionTime = 0;
+  int numExtention = 0;
+  int clusterExtended = 0;
+  long timePerCluster = 0;
+#endif
 
 //------------------------------------------------------ Type Definitions ----//
 enum LineType
@@ -131,6 +144,8 @@ struct AscendingClusterSort
 
 
 //------------------------------------------------- Function Declarations ----//
+void printSummary();
+
 void addNewAlignment
      (vector<Alignment> & Alignments, vector<Cluster>::iterator Cp,
       vector<Match>::iterator Mp);
@@ -198,6 +213,16 @@ void validateData
 int main
      (int argc, char ** argv)
 {
+  #ifdef calculate_stats
+    clock_t totalTime, setupTime, inProcessingTime, syntenyTime, syntenyProcessTime;
+    long syntenyTotalTime = 0;
+    int numProcessed=0;
+    int numSyntenyTimes = 0;
+    syntenyProcessTime = 0;
+    totalTime = clock();
+    setupTime = clock();
+  #endif
+
   FastaRecord * Af;           // array of all the reference sequences
 
   vector<Synteny> Syntenys;                  // vector of all sets of clusters
@@ -239,46 +264,44 @@ int main
     optarg = NULL;
     int ch, errflg = 0;
     while ( !errflg  &&  ((ch = getopt (argc, argv, "dehB:b:st")) != EOF) )
-      switch (ch)
-	{
-	case 'b' :
-	  setBreakLen( atoi (optarg) );
-	  break;
+      switch (ch) {
+	      case 'b' :
+	        setBreakLen( atoi (optarg) );
+	        break;
 
         case 'B' :
           setBanding( atoi (optarg) );
           break;
 
-	case 'd' :
-	  DO_DELTA = false;
-	  break;
+      	case 'd' :
+	        DO_DELTA = false;
+	        break;
 
-	case 'e' :
-	  DO_EXTEND = false;
-	  break;
+	      case 'e' :
+	        DO_EXTEND = false;
+	        break;
 
-	case 'h' :
-	  printHelp (argv[0]);
-	  exit (EXIT_SUCCESS);
-	  break;
+	      case 'h' :
+	        printHelp (argv[0]);
+	        exit (EXIT_SUCCESS);
+	        break;
 
-	case 's' :
-	  DO_SHADOWS = true;
-	  break;
+	      case 's' :
+	        DO_SHADOWS = true;
+	        break;
 
-	case 't' :
-	  TO_SEQEND = true;
-	  break;
+	      case 't' :
+	        TO_SEQEND = true;
+	        break;
 
-	default :
-	  errflg ++;
-	}
+	      default :
+	        errflg ++;
+	    }
     
-    if ( errflg > 0 || argc - optind != 3 )
-      {
-	printUsage (argv[0]);
-	exit (EXIT_FAILURE);
-      }
+    if ( errflg > 0 || argc - optind != 3 ) {
+	    printUsage (argv[0]);
+	    exit (EXIT_FAILURE);
+    }
   }
 
   //-- Read and create the I/O file names
@@ -292,16 +315,13 @@ int main
   //-- Open all the files
   RefFile = File_Open (RefFileName, "r");
   QryFile = File_Open (QryFileName, "r");
-  if ( DO_DELTA )
-    {
-      ClusterFile = NULL;
-      DeltaFile = File_Open (DeltaFileName, "w");
-    }
-  else
-    {
-      ClusterFile = File_Open (ClusterFileName, "w");
-      DeltaFile = NULL;
-    }
+  if ( DO_DELTA ) {
+    ClusterFile = NULL;
+    DeltaFile = File_Open (DeltaFileName, "w");
+  } else {
+    ClusterFile = File_Open (ClusterFileName, "w");
+    DeltaFile = NULL;
+  }
 
   //-- Print the headers of the output files
   if ( DO_DELTA )
@@ -313,22 +333,18 @@ int main
   InitSize = INIT_SIZE;
   Af = (FastaRecord *) Safe_malloc ( sizeof(FastaRecord) * Ac );
   Af[As].seq = (char *) Safe_malloc ( sizeof(char) * InitSize );
-  while ( Read_String (RefFile, Af[As].seq, InitSize, IdA, FALSE) )
-    {
+  while ( Read_String (RefFile, Af[As].seq, InitSize, IdA, FALSE) ) {
       Af[As].Id = (char *) Safe_malloc (sizeof(char) * (strlen(IdA) + 1));
       strcpy (Af[As].Id, IdA);
-
       Af[As].len = strlen (Af[As].seq + 1);
-
-      if ( ++ As >= Ac )
-	{
-	  Ac *= 2;
-	  Af = (FastaRecord *) Safe_realloc ( Af, sizeof(FastaRecord) * Ac );
-	}
+      if ( ++ As >= Ac ) {
+	      Ac *= 2;
+	      Af = (FastaRecord *) Safe_realloc ( Af, sizeof(FastaRecord) * Ac );
+	    }
 
       InitSize = INIT_SIZE;
       Af[As].seq = (char *) Safe_malloc ( sizeof(char) * InitSize );
-    }
+  }
   fclose (RefFile);
   if ( As <= 0 )
     parseAbort ( RefFileName );
@@ -340,140 +356,133 @@ int main
   IdA[0] = '\0';
   IdB[0] = '\0';
   CurrIdB[0] = '\0';
-  while ( fgets(Line, MAX_LINE, stdin) != NULL )
-    {
+  while ( fgets(Line, MAX_LINE, stdin) != NULL ) {
+    //-- If the current line is a fasta HEADER_LINE
+    if ( Line[0] == '>' ) {
+      //rc If there is not a string after '>' abort.  Set CurrIdB
+	    if ( sscanf (Line + 1, "%s", CurrIdB) != 1 )
+	      parseAbort ("stdin");
+      //rc If the line contains "Reverse", set direction to reverse
+  	  DirB = strstr (Line," Reverse") == NULL ? FORWARD_CHAR : REVERSE_CHAR;
+	    PrevLine = HEADER_LINE;
+	  }
 
-      //-- If the current line is a fasta HEADER_LINE
-      if ( Line[0] == '>' )
-	{
-	  if ( sscanf (Line + 1, "%s", CurrIdB) != 1 )
-	    parseAbort ("stdin");
-	  DirB = strstr (Line," Reverse") == NULL ? FORWARD_CHAR : REVERSE_CHAR;
+    //-- If the current line is a cluster HEADER_LINE
+    else if ( Line[0] == '#' ) {
+	    PrevLine = HEADER_LINE;
+	  }
 
-	  PrevLine = HEADER_LINE;
-	}
+    //-- If the current line is a MATCH_LINE
+    else {
+      //rc Get sequence A, sequence B and length from match line.  Abort if 
+      //   incorrect output
+	    if ( sscanf (Line, "%ld %ld %ld", &sA, &sB, &len) != 3 )
+	      parseAbort ("stdin");
 
-
-      //-- If the current line is a cluster HEADER_LINE
-      else if ( Line[0] == '#' )
-	{
-	  PrevLine = HEADER_LINE;
-	}
-
-
-      //-- If the current line is a MATCH_LINE
-      else
-	{
-	  if ( sscanf (Line, "%ld %ld %ld", &sA, &sB, &len) != 3 )
-	    parseAbort ("stdin");
-
-	  //-- Re-map the reference coordinate back to its original sequence
-	  for ( Seqi = 0; sA > Af[Seqi].len; Seqi ++ )
-	    sA -= Af[Seqi].len + 1; // extra +1 for the x at the end of each seq
-	  if ( Seqi >= As )
-	    {
+	    //-- Re-map the reference coordinate back to its original sequence
+	    for ( Seqi = 0; sA > Af[Seqi].len; Seqi ++ )
+	      sA -= Af[Seqi].len + 1; // extra +1 for the x at the end of each seq
+	    if ( Seqi >= As ) {
 	      fprintf (stderr,
-		 "ERROR: A MUM was found with a start coordinate greater than\n"
-                 "       the sequence length, a serious error has occured.\n"
-		 "       Please file a bug report\n");
+		      "ERROR: A MUM was found with a start coordinate greater than\n"
+          "       the sequence length, a serious error has occured.\n"
+		      "       Please file a bug report\n");
 	      exit (EXIT_FAILURE);
 	    }
 
-	  //-- If the match spans across a sequence boundry
-	  if ( sA + len - 1 > Af[Seqi].len || sA <= 0)
-	    {
+	    //-- If the match spans across a sequence boundry
+	    if ( sA + len - 1 > Af[Seqi].len || sA <= 0) {
 	      fprintf (stderr,
-		 "WARNING: A MUM was found extending beyond the boundry of:\n"
-		 "         Reference sequence '>%s'\n\n"
-		 "Please check that the '-n' option is activated on 'mummer2'\n"
-		 "and try again, or file a bug report\n"
-		 "Attempting to continue.\n", Af[Seqi].Id);
+		      "WARNING: A MUM was found extending beyond the boundry of:\n"
+	          	      "         Reference sequence '>%s'\n\n"
+		      "Please check that the '-n' option is activated on 'mummer2'\n"
+		      "and try again, or file a bug report\n"
+		      "Attempting to continue.\n", Af[Seqi].Id);
 	      continue;
 	    }
 
-	  //-- Check and update the current synteny region
-	  if ( strcmp (IdA, Af[Seqi].Id) != 0  ||  strcmp (IdB, CurrIdB) != 0 )
-	    {
+	    //-- Check and update the current synteny region
+	    if ( strcmp (IdA, Af[Seqi].Id) != 0  ||  strcmp (IdB, CurrIdB) != 0 ) {
 	      Found = false;
-	      if ( strcmp (IdB, CurrIdB) == 0 )
-		{
-		  //-- Has this header been seen before?
-		  for ( Sp = Syntenys.rbegin( ); Sp < Syntenys.rend( ); Sp ++ )
-		    {
-		      if ( strcmp (Sp->AfP->Id, Af[Seqi].Id) == 0 )
-			{
-			  if ( Sp->AfP->len != Af[Seqi].len )
-			    {
-			      fprintf (stderr,
-				 "ERROR: The reference file may contain"
-				 " sequences with non-unique\n"
-                                 "       header Ids, please check your input"
-				 " files and try again\n");
-			      exit (EXIT_FAILURE);
-			    }
-			  assert ( strcmp (Sp->Bf.Id, IdB) == 0 );
-			  CurrSp = Sp;
-			  Found = true;
-			  break;
-			}
-		    }
-		}
-	      else
-		{
-      //rc Add threads since each call to process synteny should be independent of eachother
+	      if ( strcmp (IdB, CurrIdB) == 0 ) {
+		      //-- Has this header been seen before?
+          //rc This has been seen before if the idA in the temporary synteny 
+          //   matches the current match and has the same length
+	    	  for ( Sp = Syntenys.rbegin( ); Sp < Syntenys.rend( ); Sp ++ ) {
+            //rc Check if the reference sequence Ids match
+		        if ( strcmp (Sp->AfP->Id, Af[Seqi].Id) == 0 ) {
+              //rc Check that the lengths match
+			        if ( Sp->AfP->len != Af[Seqi].len ) {
+			          fprintf (stderr,
+				          "ERROR: The reference file may contain"
+				            " sequences with non-unique\n"
+                    "       header Ids, please check your input"
+				            " files and try again\n");
+			          exit (EXIT_FAILURE);
+			        }
+              //rc Verify that the B sequence Ids match
+			        assert ( strcmp (Sp->Bf.Id, IdB) == 0 );
+			        //rc We found the synteny region this should go in
+              CurrSp = Sp;
+			        Found = true;
+			        break;
+			      }
+		      }
+		    } else {
+          //rc Add threads 
+
+          //rc each call to process synteny should be independent of eachother?
       
-		  //-- New B sequence header, process all the old synteny's
-		  processSyntenys (Syntenys, Af, As,
-				   QryFile, ClusterFile, DeltaFile);
-		}
+		      //-- New B sequence header, process all the old synteny's
+          processSyntenys (Syntenys, Af, As,
+				    QryFile, ClusterFile, DeltaFile);
+          printf("Finished processing syntenys.  There are currently %d syntenys.\n", Syntenys.size());
+		    }
 	      
 	      strcpy (IdA, Af[Seqi].Id);
 	      strcpy (IdB, CurrIdB);
 
 	      //-- If not seen yet, create a new synteny region
-	      if ( ! Found )   
-		{
-		  Asyn.AfP = Af + Seqi;
-		  Asyn.Bf.len = -1;
-		  Asyn.Bf.Id = (char *) Safe_malloc
-		    (sizeof(char) * (strlen(IdB) + 1));
-		  strcpy (Asyn.Bf.Id, IdB);
+	      if (!Found) {
+          printf("Adding new synteny.  There are currently %d syntenys.\n", Syntenys.size());
+		      Asyn.AfP = Af + Seqi;
+		      Asyn.Bf.len = -1;
+		      Asyn.Bf.Id = (char *) Safe_malloc
+		      (sizeof(char) * (strlen(IdB) + 1));
+		      strcpy (Asyn.Bf.Id, IdB);
 
-		  Syntenys.push_back (Asyn);
-		  CurrSp = Syntenys.rbegin( );
-		}
+		      Syntenys.push_back (Asyn);
+		      CurrSp = Syntenys.rbegin( );
+		    }
 
 	      //-- Add a new cluster to the current synteny
-              if ( !Syntenys.empty( ) && !CurrSp->clusters.empty( ) )
-		if ( CurrSp->clusters.rbegin( )->matches.empty( ) )
-		  CurrSp->clusters.pop_back( ); // hack to remove empties
+        if ( !Syntenys.empty( ) && !CurrSp->clusters.empty( ) )
+		      if ( CurrSp->clusters.rbegin( )->matches.empty( ) )
+		        CurrSp->clusters.pop_back( ); // hack to remove empties
+	      Aclu.wasFused = false;
+	      Aclu.dirB = DirB;
+	      CurrSp->clusters.push_back (Aclu);
+	    } else if ( PrevLine == HEADER_LINE ) {
+	      //-- Add a new cluster to the current synteny
+        if ( !Syntenys.empty( ) && !CurrSp->clusters.empty( ) )
+		      if ( CurrSp->clusters.rbegin( )->matches.empty( ) )
+		        CurrSp->clusters.pop_back( );
 	      Aclu.wasFused = false;
 	      Aclu.dirB = DirB;
 	      CurrSp->clusters.push_back (Aclu);
 	    }
-	  else if ( PrevLine == HEADER_LINE )
-	    {
-	      //-- Add a new cluster to the current synteny
-              if ( !Syntenys.empty( ) && !CurrSp->clusters.empty( ) )
-		if ( CurrSp->clusters.rbegin( )->matches.empty( ) )
-		  CurrSp->clusters.pop_back( );
-	      Aclu.wasFused = false;
-	      Aclu.dirB = DirB;
-	      CurrSp->clusters.push_back (Aclu);
-	    }
 
-	  //-- Add a new match to the current cluster
-	  if ( len > 1 )
-	    {
+	    //-- Add a new match to the current cluster
+	    if ( len > 1 ) {
 	      Amat.sA = sA;
 	      Amat.sB = sB;
 	      Amat.len = len;
 	      CurrSp->clusters.rbegin( )->matches.push_back (Amat);
 	    }
 
-	  PrevLine = MATCH_LINE;
-	}
+	    PrevLine = MATCH_LINE;
     }
+  }
   //rc Bring all the threads back together before cleaning up
   //-- Process the left-over syntenys
   if ( !Syntenys.empty( ) && !CurrSp->clusters.empty( ) )
@@ -484,17 +493,50 @@ int main
   fclose (QryFile);
 
   //-- Free the reference sequences
-  for ( i = 0; i < As; i ++ )
-    {
-      free (Af[i].Id);
-      free (Af[i].seq);
-    }
+  for ( i = 0; i < As; i ++ ) {
+    free (Af[i].Id);
+    free (Af[i].seq);
+  }
   free (Af);
+
+  #ifdef calculate_stats
+    //Calculate Times
+    totalTime = clock() - totalTime;
+    float syntenyAverage = ((float)syntenyTotalTime)/numSyntenyTimes;
+    float syntenyProcessAverage = ((float)::syntenyProcessTime)/::numSyntenyProcess;
+    float extentionTimeAverage = ((float)::extentionTime/::numExtention);
+    float timePerClusterAverage = ((float)::timePerCluster/::clusterExtended);
+
+     //Print times
+     printf ("Total processing time: %lu clicks (%f seconds).\n",totalTime,((float)totalTime)/CLOCKS_PER_SEC);
+     printf ("Setup processing time: %lu clicks (%f seconds).\n",setupTime,((float)setupTime)/CLOCKS_PER_SEC);
+
+     printf ("Input processing time: %lu clicks (%f seconds).\n",inProcessingTime,((float)inProcessingTime)/CLOCKS_PE     R_SEC);
+     printf ("Total Synteny update time: %lu clicks (%f seconds).\n",syntenyTotalTime,((float)syntenyTotalTime)/CLOCK     S_PER_SEC);
+     printf ("Average Synteny update time: %f clicks (%f seconds).\n",syntenyAverage,((float)syntenyAverage)/CLOCKS_P     ER_SEC);
+
+     printf ("Total Synteny processing time: %lu clicks (%f seconds).\n",::syntenyProcessTime,((float)::syntenyProces     sTime)/CLOCKS_PER_SEC);
+     printf ("Average Synteny processing time: %.1f clicks (%f seconds).\n",syntenyProcessAverage,((float)syntenyProc     essAverage)/CLOCKS_PER_SEC);
+
+     printf ("Total Extension time: %lu clicks (%f seconds).\n",::extentionTime,((float)::extentionTime)/CLOCKS_PER_S     EC);
+     printf ("Average Extension time per Synteny: %.1f clicks (%f seconds).\n",extentionTimeAverage,((float)extention     TimeAverage)/CLOCKS_PER_SEC);
+
+     printf ("Average Extension Time per Cluster: %.1f clicks (%f seconds).\n",timePerClusterAverage,((float)timePerC     lusterAverage)/CLOCKS_PER_SEC);
+
+  #endif
 
   return EXIT_SUCCESS;
 }
 
-
+void printSummary() {
+  #ifdef calculate_stats
+    cout << "\nNUCmer Summary\n\n";
+    cout << "Created Synteny: " << syntenyCreated << "\n";
+    cout << "Updated Synteny: " << syntenyUpdated << "\n";
+    cout << "Clusters Added to Synteny: " << addedToCluster << "\n";
+    cout << "Number of Clusters Extended: " << ::clusterExtended << "\n";
+  #endif  
+}
 
 
 void addNewAlignment
@@ -1368,12 +1410,13 @@ void processSyntenys
 
      //  For each syntenic region with clusters, read in the B sequence and
      //  extend the clusters to expand total alignment coverage. Only should
-     //  be called once all the clusters for the contained syntenic regions have
-     //  been stored in the data structure. Frees the memory used by the
+     //                   ibe called once all the clusters for the contained syntenic regions have
+     //  been stored in the data structure. Fr);ees the memory used by the
      //  the syntenic regions once the output of extendClusters and
      //  flushSyntenys has been produced.
 
 {
+  printf("Processing syntenys.  Syntenys ");
   FastaRecord Bf;                     // the current B sequence
   Bf.Id = (char *) Safe_malloc (sizeof(char) * (MAX_LINE + 1));
 
@@ -1382,14 +1425,23 @@ void processSyntenys
 
   //-- Initialize the B sequence storage
   Bf.seq = (char *) Safe_malloc ( sizeof(char) * InitSize );
-
+  int i = 0;
+  bool printed = false;
   //-- For all the contained syntenys
   for ( CurrSp = Syntenys.begin( ); CurrSp < Syntenys.end( ); CurrSp ++ )
     { 
       //-- If no clusters, ignore
-      if ( CurrSp->clusters.empty( ) )
-	continue;
-
+      if ( CurrSp->clusters.empty( ) ) {
+          i++;
+	        continue;
+      }
+      if (!printed) {
+        printf("%d", i);
+        printed = true;
+      } else {
+        printf(", %d", i);
+      }
+      i++;
       //-- If a B sequence not seen yet, read it in
       //-- IMPORTANT: The B sequences in the synteny object are assumed to be
       //      ordered as output by mgaps, if they are not in order the program
@@ -1412,6 +1464,7 @@ void processSyntenys
       extendClusters (CurrSp->clusters, CurrSp->AfP, &Bf, DeltaFile);
     }
 
+  printf(" have clusters\n");
   //-- Create the cluster information
   flushSyntenys (Syntenys, ClusterFile);
 
