@@ -244,6 +244,7 @@ int main
 
   signed char DirB = FORWARD_CHAR;   // the current query strand direction
 
+  int numThreads = 1;                // the number of threads for processing
   long int i;                        // temporary counter
   long int Seqi;                     // current reference sequence index
   long int InitSize;                 // initial sequence memory space
@@ -263,30 +264,46 @@ int main
   {
     optarg = NULL;
     int ch, errflg = 0;
-    while ( !errflg  &&  ((ch = getopt (argc, argv, "dehB:b:st")) != EOF) )
+    while ( !errflg  &&  ((ch = getopt (argc, argv, "dehB:b:n:st")) != EOF) )
       switch (ch) {
 	      case 'b' :
+          //rc Distance an alignment extension will attempt to extend poor 
+          //   scoring regions before giving up
 	        setBreakLen( atoi (optarg) );
 	        break;
 
         case 'B' :
+          // rc Enforce absolute banding of dynamic programming matrix based
+          //    on diagdiff parameter
           setBanding( atoi (optarg) );
           break;
 
       	case 'd' :
+          //rc Prevents the alignment extension step and only outputs the match
+          //   clusters
 	        DO_DELTA = false;
 	        break;
 
 	      case 'e' :
+          //rc Prevent alignment extensions but still align the DNA between 
+          //   clustered matches and create the .delta file
 	        DO_EXTEND = false;
 	        break;
 
 	      case 'h' :
+          //rc Print help informtaion
 	        printHelp (argv[0]);
 	        exit (EXIT_SUCCESS);
 	        break;
+        
+        case 'n':
+          //rc Set the number of threads that will be used. Default is 1.
+          numThreads = (atoi (optarg));
+          printf("Setting the number of threads to %d\n", numThreads);
+          break;          
 
 	      case 's' :
+          //rc Do not simplify alignments by removing shadowed clusters.
 	        DO_SHADOWS = true;
 	        break;
 
@@ -294,7 +311,8 @@ int main
 	        TO_SEQEND = true;
 	        break;
 
-	      default :
+	      default : 
+          //rc Command line argument not recognized
 	        errflg ++;
 	    }
     
@@ -1389,29 +1407,14 @@ void parseDelta
   return;
 }
 
-
-//void processSynteny(vector<Synteny> & Syntenys, FastaRecord * Af, 
-//    long int As, FILE * QryFile, FILE * ClusterFile, FILE * DeltaFile)
-//{
-//  FastaRecord Bf;
-//  Bf.Id = (char *) Safe_malloc (sizeof(char) * (MAX_LINW + 1));
-//
-//  long int InitSize = INIT_SIZE;
-//  
-//  if( CurrSp->clusters.empty() {
-//    continue;
-//  }
-//
-//}
-
 void processSyntenys
      (vector<Synteny> & Syntenys, FastaRecord * Af, long int As,
       FILE * QryFile, FILE * ClusterFile, FILE * DeltaFile)
 
      //  For each syntenic region with clusters, read in the B sequence and
      //  extend the clusters to expand total alignment coverage. Only should
-     //                   ibe called once all the clusters for the contained syntenic regions have
-     //  been stored in the data structure. Fr);ees the memory used by the
+     //  be called once all the clusters for the contained syntenic regions have
+     //  been stored in the data structure. Frees the memory used by the
      //  the syntenic regions once the output of extendClusters and
      //  flushSyntenys has been produced.
 
@@ -1504,6 +1507,7 @@ void printHelp
       "-d      output only match clusters rather than extended alignments\n"
       "-e      do not extend alignments outward from clusters\n"
       "-h      display help information\n"
+      "-n int  set the number of threads\n"
       "-s      don't remove shadowed alignments, useful for aligning a\n"
       "        sequence to itself to identify repeats\n"
       "-t      force alignment to ends of sequence if within -b distance\n\n");
