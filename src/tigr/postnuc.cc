@@ -43,7 +43,8 @@
 //         mostly the alignment extension performance (sw_align.h)
 //#define _DEBUG_ASSERT       // self testing assert functions
 
-#include <pthread.h>
+#include <boost/asio.hpp>
+#include <boost/thread.hpp>
 #include <iostream>
 #include "tigrinc.hh"
 #include "sw_align.hh"
@@ -366,8 +367,16 @@ int main
   fclose (RefFile);
   if ( As <= 0 )
     parseAbort ( RefFileName );
-
-
+  
+  //rc Create a thread pool using boost asio and thread libraries
+  boost::asio::io_service svc;
+  boost::thread_group threads;
+  
+  std::auto_ptr<boost::asio::io_service::work> work(new boost::asio::io_service::work(svc));
+  for( int i = 0; i < numThreads; i++) {
+    threads.create_thread(boost::bind (&boost::asio::io_service::run, &svc));
+  }
+  
 
   //-- Process the input from <stdin> line by line
   PrevLine = NO_LINE;
@@ -448,12 +457,13 @@ int main
 		      }
 		    } else {
           //rc Add threads 
-
+		svc.post(std::bind(processSyntenys, Syntenys, Af, As, QryFile, ClusterFile, DeltaFile));
           //rc each call to process synteny should be independent of eachother?
       
 		      //-- New B sequence header, process all the old synteny's
           processSyntenys (Syntenys, Af, As,
 				    QryFile, ClusterFile, DeltaFile);
+	  Syntenys.clear();
           printf("Finished processing syntenys.  There are currently %d syntenys.\n", Syntenys.size());
 		    }
 	      
@@ -501,6 +511,7 @@ int main
 	    PrevLine = MATCH_LINE;
     }
   }
+  threads.join_all();
   //rc Bring all the threads back together before cleaning up
   //-- Process the left-over syntenys
   if ( !Syntenys.empty( ) && !CurrSp->clusters.empty( ) )
